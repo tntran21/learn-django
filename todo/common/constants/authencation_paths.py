@@ -1,0 +1,1 @@
+ProtectedPath = ["/api/accounts/update/"]

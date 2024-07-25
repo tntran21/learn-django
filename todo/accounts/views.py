@@ -2,14 +2,16 @@ from rest_framework.decorators import api_view
 from rest_framework.response import Response
 from rest_framework import status
 from accounts.models import Accounts
-from accounts.serializer import AccountsSignupSerializer, AccountsLoginSerializer
-from rest_framework.permissions import AllowAny
-from rest_framework.decorators import permission_classes
-from rest_framework_simplejwt.tokens import RefreshToken
+from accounts.serializer import AccountsSignupSerializer
+from accounts.utils import AccountUtils
+from django.views.decorators.csrf import csrf_exempt
+from django.utils.decorators import method_decorator
+from todo.middleware.token_middleware import api_view_csrf_exempt
+from rest_framework.views import APIView
 
 
 # Create your views here.
-class AccountsManager:
+class AccountsManager(APIView):
     """
     A class that handles user accounts.
 
@@ -21,7 +23,6 @@ class AccountsManager:
     """
 
     @api_view(["POST"])
-    @permission_classes([AllowAny])
     def account_signup(request):
         """
         Handles user signup.
@@ -54,7 +55,6 @@ class AccountsManager:
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
     @api_view(["POST"])
-    @permission_classes([AllowAny])
     def account_login(request):
         """
         Handles user login.
@@ -71,14 +71,17 @@ class AccountsManager:
         response = {}
 
         try:
-            user = Accounts.objects.get(email=email)
-            if user.check_password(password):
-                refresh_token = RefreshToken.for_user(user)
+            account = Accounts.objects.get(email=email)
+            if account.check_password(password):
+                token_payload = {"email": account.email}
+                token = AccountUtils.generate_jwt_token(token_payload)
 
                 response["message"] = "Login successful"
-                response["data"] = {"user_name": user.user_name, "email": user.email}
-                response["refresh_token"] = str(refresh_token)
-                response["access_token"] = str(refresh_token.access_token)
+                response["data"] = {
+                    "user_name": account.user_name,
+                    "email": account.email,
+                }
+                response["token"] = str(token)
 
                 return Response(response, status=status.HTTP_200_OK)
             else:
@@ -106,8 +109,9 @@ class AccountsManager:
         response["message"] = "Logout successful"
         return Response(response, status=status.HTTP_200_OK)
 
+    @csrf_exempt
     @api_view(["POST"])
-    def account_update(request):
+    def account_update(request, *args, **kwargs):
         """
         Handles user account update.
 
@@ -119,8 +123,12 @@ class AccountsManager:
         """
 
         response = {}
-        user = request.user
-        serializer = AccountsSignupSerializer(user, data=request.data, partial=True)
+        user = {
+            "email": request.data["email"],
+            "user_name": request.data["user_name"],
+            "password": request.data["password"],
+        }
+        serializer = AccountsSignupSerializer(data=request.data, partial=True)
         if serializer.is_valid():
             serializer.save()
             response["message"] = "User updated successfully"
